@@ -10,8 +10,6 @@ from .transformer import build_transformer, TransformerEncoder, TransformerEncod
 
 import numpy as np
 
-import IPython
-e = IPython.embed
 
 
 def reparametrize(mu, logvar):
@@ -48,6 +46,7 @@ class DETRVAE(nn.Module):
         self.camera_names = camera_names
         self.transformer = transformer
         self.encoder = encoder
+        self.state_dim = state_dim
         hidden_dim = transformer.d_model
         self.action_head = nn.Linear(hidden_dim, state_dim)
         self.is_pad_head = nn.Linear(hidden_dim, 1)
@@ -55,19 +54,19 @@ class DETRVAE(nn.Module):
         if backbones is not None:
             self.input_proj = nn.Conv2d(backbones[0].num_channels, hidden_dim, kernel_size=1)
             self.backbones = nn.ModuleList(backbones)
-            self.input_proj_robot_state = nn.Linear(5, hidden_dim)
+            self.input_proj_robot_state = nn.Linear(self.state_dim, hidden_dim)
         else:
             # input_dim = 14 + 7 # robot_state + env_state
-            self.input_proj_robot_state = nn.Linear(5, hidden_dim)
-            self.input_proj_env_state = nn.Linear(5, hidden_dim)
+            self.input_proj_robot_state = nn.Linear(self.state_dim, hidden_dim)
+            self.input_proj_env_state = nn.Linear(self.state_dim, hidden_dim)
             self.pos = torch.nn.Embedding(2, hidden_dim)
             self.backbones = None
 
         # encoder extra parameters
         self.latent_dim = 32 # final size of latent z # TODO tune
         self.cls_embed = nn.Embedding(1, hidden_dim) # extra cls token embedding
-        self.encoder_action_proj = nn.Linear(5, hidden_dim) # project action to embedding
-        self.encoder_joint_proj = nn.Linear(5, hidden_dim)  # project qpos to embedding
+        self.encoder_action_proj = nn.Linear(self.state_dim, hidden_dim) # project action to embedding
+        self.encoder_joint_proj = nn.Linear(self.state_dim, hidden_dim)  # project qpos to embedding
         self.latent_proj = nn.Linear(hidden_dim, self.latent_dim*2) # project hidden state to latent std, var
         self.register_buffer('pos_table', get_sinusoid_encoding_table(1+1+num_queries, hidden_dim)) # [CLS], qpos, a_seq
 
@@ -118,7 +117,7 @@ class DETRVAE(nn.Module):
             all_cam_features = []
             all_cam_pos = []
             for cam_id, cam_name in enumerate(self.camera_names):
-                features, pos = self.backbones[0](image[:, cam_id]) # HARDCODED
+                features, pos = self.backbones[cam_id](image[:, cam_id])  # HARDCODED
                 features = features[0] # take the last layer feature
                 pos = pos[0]
                 all_cam_features.append(self.input_proj(features))
@@ -153,6 +152,7 @@ class CNNMLP(nn.Module):
         """
         super().__init__()
         self.camera_names = camera_names
+        self.state_dim = state_dim
         self.action_head = nn.Linear(1000, state_dim) # TODO add more
         if backbones is not None:
             self.backbones = nn.ModuleList(backbones)
@@ -166,8 +166,8 @@ class CNNMLP(nn.Module):
                 backbone_down_projs.append(down_proj)
             self.backbone_down_projs = nn.ModuleList(backbone_down_projs)
 
-            mlp_in_dim = 768 * len(backbones) + 5
-            self.mlp = mlp(input_dim=mlp_in_dim, hidden_dim=1024, output_dim=5, hidden_depth=2)
+            mlp_in_dim = 768 * len(backbones) + self.state_dim
+            self.mlp = mlp(input_dim=mlp_in_dim, hidden_dim=1024, output_dim=self.state_dim, hidden_depth=2)
         else:
             raise NotImplementedError
 
@@ -227,14 +227,13 @@ def build_encoder(args):
 
 
 def build(args):
-    state_dim = 5 # TODO hardcode
-
     # From state
     # backbone = None # from state for now, no need for conv nets
     # From image
     backbones = []
-    backbone = build_backbone(args)
-    backbones.append(backbone)
+    for _ in args.camera_names:
+        backbone = build_backbone(args)
+        backbones.append(backbone)
 
     transformer = build_transformer(args)
 
@@ -244,7 +243,7 @@ def build(args):
         backbones,
         transformer,
         encoder,
-        state_dim=state_dim,
+        state_dim=args.state_dim,
         num_queries=args.num_queries,
         camera_names=args.camera_names,
     )
@@ -254,9 +253,8 @@ def build(args):
 
     return model
 
-def build_cnnmlp(args):
-    state_dim = 5 # TODO hardcode
 
+def build_cnnmlp(args):
     # From state
     # backbone = None # from state for now, no need for conv nets
     # From image
@@ -267,7 +265,7 @@ def build_cnnmlp(args):
 
     model = CNNMLP(
         backbones,
-        state_dim=state_dim,
+        state_dim=args.state_dim,
         camera_names=args.camera_names,
     )
 

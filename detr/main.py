@@ -34,6 +34,11 @@ def get_args_parser():
                         help="A list of camera names")
 
     # * Transformer
+    parser.add_argument('--state_dim', default=5, type=int, # will be overridden
+                        help="dimension of robot state, 8 for panda robot")
+    parser.add_argument('--action_dim', default=5, type=int, # will be overridden
+                        help="dimension of robot actions, 8 for panda robot")
+
     parser.add_argument('--enc_layers', default=4, type=int, # will be overridden
                         help="Number of encoding layers in the transformer")
     parser.add_argument('--dec_layers', default=6, type=int, # will be overridden
