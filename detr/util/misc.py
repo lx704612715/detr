@@ -23,7 +23,6 @@ if version.parse(torchvision.__version__) < version.parse('0.7'):
     from torchvision.ops import _new_empty_tensor
     from torchvision.ops.misc import _output_size
 
-device = os.environ['DEVICE']
 
 class SmoothedValue(object):
     """Track a series of values and provide access to smoothed values over a
